@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Optimierte Karte</title>
+  <style>
+    :root {
+      --field-size: 42px;
+      --min-zoom: 0.5;
+      --max-zoom: 2;
+      --zoom-factor: 1;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: black;
+      overflow: hidden;
+    }
+
+    /* Hintergrundbild hinzufügen */
+    .map-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      cursor: grab;
+      top: 50px;
+      background: url('background.png') repeat;
+      transition: background-position 0.1s linear;
+    }
+
+    .top-menu {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      height: 50px;
+      background: rgba(0, 0, 50, 0.8);
+      color: white;
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 10;
+    }
+
+    .sidebar {
+      position: fixed;
+      top: 50px;
+      left: 0;
+      width: 200px;
+      height: calc(100vh - 50px);
+      background: rgba(0, 0, 50, 0.8);
+      color: white;
+      overflow-y: auto;
+      z-index: 10;
+      padding: 10px;
+    }
+
+    .map-field {
+      position: absolute;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 1px solid rgba(39, 39, 39, 0.39);
+      background: rgba(0, 0, 0, 0.3);
+      color: white;
+      font-size: 0.8em;
+    }
+
+    .map-field.star {
+      background: url('planet.gif') no-repeat center center / contain;
+    }
+
+    .map-field.nebula {
+      background: rgba(255, 0, 0, 0.3);
+    }
+
+    button {
+      background: #333;
+      border: none;
+      color: white;
+      padding: 8px 12px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    button:hover {
+      background: #555;
+    }
+  </style>
+</head>
+<body>
+  <header class="top-menu">
+    <button id="zoom-in">Zoom In</button>
+    <button id="zoom-out">Zoom Out</button>
+  </header>
+
+  <aside class="sidebar">
+    <h3>Planeten</h3>
+    <ul id="planet-list"></ul>
+    <h3>Schiffe</h3>
+    <ul id="ship-list"></ul>
+  </aside>
+
+  <main>
+    <div id="map-container" class="map-container"></div>
+  </main>
+
+  <script>
+    const container = document.getElementById('map-container');
+    const planetList = document.getElementById('planet-list');
+    const shipList = document.getElementById('ship-list');
+
+    const FIELD_SIZE = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--field-size'));
+    const MAP_SIZE = 200;
+
+    let zoomFactor = 1;
+    let mapOffsetX = 0, mapOffsetY = 0;
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+
+    const fields = [];
+    const planets = [];
+    const ships = [];
+
+    // Generate map fields with random types
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const type = Math.random() > 0.9 ? 'nebula' : Math.random() > 0.8 ? 'star' : 'empty';
+        const field = { id: `${x}-${y}`, x, y, type };
+        fields.push(field);
+
+        if (type === 'star' && Math.random() > 0.7) planets.push(field);
+        if (type === 'nebula' && Math.random() > 0.7) ships.push(field);
+      }
+    }
+
+    // Update side lists
+    const updateList = () => {
+      planetList.innerHTML = planets.map(p => `<li onclick="jumpTo(${p.x}, ${p.y})">Planet (${p.x}, ${p.y})</li>`).join('');
+      shipList.innerHTML = ships.map(s => `<li onclick="jumpTo(${s.x}, ${s.y})">Schiff (${s.x}, ${s.y})</li>`).join('');
+    };
+
+    // Jump to coordinates
+    const jumpTo = (x, y) => {
+      mapOffsetX = x * FIELD_SIZE * zoomFactor - container.clientWidth / 2;
+      mapOffsetY = y * FIELD_SIZE * zoomFactor - container.clientHeight / 2;
+      renderVisibleMap();
+    };
+
+    // Render only visible fields
+    const renderVisibleMap = () => {
+      const { clientWidth, clientHeight } = container;
+      const visibleCols = Math.ceil(clientWidth / (FIELD_SIZE * zoomFactor));
+      const visibleRows = Math.ceil(clientHeight / (FIELD_SIZE * zoomFactor));
+      const startX = Math.max(0, Math.floor(mapOffsetX / (FIELD_SIZE * zoomFactor)));
+      const startY = Math.max(0, Math.floor(mapOffsetY / (FIELD_SIZE * zoomFactor)));
+
+      container.innerHTML = '';
+      for (let y = startY; y < startY + visibleRows; y++) {
+        for (let x = startX; x < startX + visibleCols; x++) {
+          const field = fields.find(f => f.x === x && f.y === y);
+          if (field) {
+            const div = document.createElement('div');
+            div.className = `map-field ${field.type}`;
+            div.style.width = `${FIELD_SIZE * zoomFactor}px`;
+            div.style.height = `${FIELD_SIZE * zoomFactor}px`;
+            div.style.left = `${x * FIELD_SIZE * zoomFactor - mapOffsetX}px`;
+            div.style.top = `${y * FIELD_SIZE * zoomFactor - mapOffsetY}px`;
+            container.appendChild(div);
+          }
+        }
+      }
+
+      // Update background position to create moving effect
+      container.style.backgroundPosition = `${mapOffsetX * -0.03}px ${mapOffsetY * -0.03}px`;
+    };
+
+    // Handle drag and touch events
+    const startDrag = (x, y) => {
+      isDragging = true;
+      lastX = x;
+      lastY = y;
+      container.style.cursor = 'grabbing';
+    };
+
+    const drag = (x, y) => {
+      if (!isDragging) return;
+      mapOffsetX -= x - lastX;
+      mapOffsetY -= y - lastY;
+      lastX = x;
+      lastY = y;
+      renderVisibleMap();
+    };
+
+    const endDrag = () => {
+      isDragging = false;
+      container.style.cursor = 'grab';
+    };
+
+    container.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+    container.addEventListener('mousemove', (e) => drag(e.clientX, e.clientY));
+    container.addEventListener('mouseup', endDrag);
+    container.addEventListener('mouseleave', endDrag);
+
+    container.addEventListener('touchstart', (e) => startDrag(e.touches[0].clientX, e.touches[0].clientY));
+    container.addEventListener('touchmove', (e) => drag(e.touches[0].clientX, e.touches[0].clientY));
+    container.addEventListener('touchend', endDrag);
+
+    // Zoom control
+    document.getElementById('zoom-in').addEventListener('click', () => { zoomFactor = Math.min(2, zoomFactor + 0.1); renderVisibleMap(); });
+    document.getElementById('zoom-out').addEventListener('click', () => { zoomFactor = Math.max(0.5, zoomFactor - 0.1); renderVisibleMap(); });
+
+    renderVisibleMap();
+    updateList();
+  </script>
+</body>
+</html>
